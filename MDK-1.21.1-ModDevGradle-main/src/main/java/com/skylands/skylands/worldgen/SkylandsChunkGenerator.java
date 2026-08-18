@@ -5296,7 +5296,7 @@ public class SkylandsChunkGenerator extends ChunkGenerator {
         }
 
         int baseSurfaceY = centerSample.surfaceY();
-        int jitter = deterministicJitter(island.noiseSeed(), SkylandsConfig.HEIGHT_JITTER.getAsInt());
+        int jitter = island.isSpawnOrigin() ? 0 : deterministicJitter(island.noiseSeed(), SkylandsConfig.HEIGHT_JITTER.getAsInt());
         int targetY = Mth.clamp(baseSurfaceY + jitter, SkylandsConfig.MIN_TARGET_Y.getAsInt(), SkylandsConfig.MAX_TARGET_Y.getAsInt());
         int clamped = Mth.clamp(
                 targetY,
@@ -5958,8 +5958,10 @@ public class SkylandsChunkGenerator extends ChunkGenerator {
     }
 
     private int islandCenterY(SkylandsIslands.Island island) {
-        int base = SkylandsConfig.CENTER_Y.getAsInt();
-        int jitter = SkylandsConfig.HEIGHT_JITTER.getAsInt();
+        int base = island.isSpawnOrigin()
+                ? SkylandsConfig.SPAWN_CENTER_Y.getAsInt()
+                : SkylandsConfig.CENTER_Y.getAsInt();
+        int jitter = island.isSpawnOrigin() ? 0 : SkylandsConfig.HEIGHT_JITTER.getAsInt();
         if (jitter <= 0) {
             return base;
         }

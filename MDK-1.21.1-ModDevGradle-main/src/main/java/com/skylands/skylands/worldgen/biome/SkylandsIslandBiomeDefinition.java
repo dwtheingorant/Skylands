@@ -50,6 +50,43 @@ public record SkylandsIslandBiomeDefinition(
         return requirements != null && requirements.isComplete() && requirements.matches(context);
     }
 
+    public static SkylandsIslandBiomeDefinition spawnFallback(ResourceLocation biomeId, BlockState preferredSurface) {
+        BlockState surface = preferredSurface != null ? preferredSurface : Blocks.GRASS_BLOCK.defaultBlockState();
+        List<SurfaceLayerDefinition> surfaceLayers = List.of(
+                new SurfaceLayerDefinition(surface, 1),
+                new SurfaceLayerDefinition(Blocks.DIRT.defaultBlockState(), 3),
+                new SurfaceLayerDefinition(Blocks.STONE.defaultBlockState(), 5)
+        );
+        List<NoiseCondition> always = new ArrayList<>();
+        always.add(new NoiseCondition(Comparison.GREATER_THAN_OR_EQUAL, -1.0D));
+        NoiseRequirements req = new NoiseRequirements(always, always, always, always, always, always);
+        return new SkylandsIslandBiomeDefinition(
+                biomeId,
+                surface,
+                null,
+                null,
+                surfaceLayers,
+                Blocks.STONE.defaultBlockState(),
+                null,
+                null,
+                true,
+                0.5D,
+                Blocks.DEEPSLATE.defaultBlockState(),
+                List.of(new DeepDetailDefinition(Blocks.TUFF.defaultBlockState(), 500, 7), new DeepDetailDefinition(Blocks.DIRT.defaultBlockState(), 100, 3)),
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(),
+                null,
+                req,
+                Integer.MAX_VALUE,
+                1.0D,
+                "rolling",
+                List.of(),
+                List.of()
+        );
+    }
+
     public record SurfaceLayerDefinition(BlockState state, int depth) {
         public int clampedDepth() {
             return Math.max(1, depth);

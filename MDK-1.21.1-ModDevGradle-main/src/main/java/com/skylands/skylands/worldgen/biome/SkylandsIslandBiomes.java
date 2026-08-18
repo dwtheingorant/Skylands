@@ -44,6 +44,44 @@ public final class SkylandsIslandBiomes {
     }
 
     public static SkylandsIslandBiomeDefinition select(long worldSeed, SkylandsIslands.Island island) {
+        if (island.isSpawnOrigin()) {
+            List<? extends String> poolRaw = SkylandsConfig.SPAWN_BIOME_POOL.get();
+            if (poolRaw != null && !poolRaw.isEmpty()) {
+                List<String> pool = poolRaw.stream()
+                        .filter(s -> s != null && !s.isBlank())
+                        .map(String::trim)
+                        .toList();
+                if (!pool.isEmpty()) {
+                    List<SkylandsIslandBiomeDefinition> defs = definitions();
+                    List<SkylandsIslandBiomeDefinition> matched = new ArrayList<>();
+                    for (String id : pool) {
+                        String normalized = id.startsWith("minecraft:") ? id : "minecraft:" + id;
+                        for (SkylandsIslandBiomeDefinition def : defs) {
+                            String defId = def.biomeId().toString();
+                            int colon = defId.indexOf(':');
+                            String defPath = colon >= 0 ? defId.substring(colon + 1) : defId;
+                            if (normalized.equals(defId) || id.equals(defId) || id.equals(defPath)) {
+                                matched.add(def);
+                                break;
+                            }
+                        }
+                    }
+                    if (matched.isEmpty()) {
+                        String firstId = pool.get(0);
+                        String normalized = firstId.startsWith("minecraft:") ? firstId : "minecraft:" + firstId;
+                        ResourceLocation key = ResourceLocation.tryParse(normalized);
+                        if (key != null) {
+                            return SkylandsIslandBiomeDefinition.spawnFallback(key, Blocks.GRASS_BLOCK.defaultBlockState());
+                        }
+                    } else {
+                        long mix = worldSeed ^ Long.rotateLeft((long) island.noiseSeed() * 0x9E3779B97F4A7C15L, 17) ^ 0x5EED151ADE1L;
+                        int idx = Math.floorMod(Long.hashCode(mix), matched.size());
+                        return matched.get(idx);
+                    }
+                }
+            }
+        }
+
         List<SkylandsIslandBiomeDefinition> defs = definitions();
         if (defs.isEmpty()) {
             return defaultDefinition();
