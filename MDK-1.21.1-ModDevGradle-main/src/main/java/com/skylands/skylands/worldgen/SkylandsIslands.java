@@ -116,10 +116,7 @@ public final class SkylandsIslands {
     }
 
     private static boolean isSuppressedSpawnNeighbor(int cellX, int cellZ) {
-        if (cellX == 0 && cellZ == 0) {
-            return false;
-        }
-        return Math.abs(cellX) <= 1 && Math.abs(cellZ) <= 1;
+        return false;
     }
 
     private record Candidate(int centerX, int centerZ, double score) {}
