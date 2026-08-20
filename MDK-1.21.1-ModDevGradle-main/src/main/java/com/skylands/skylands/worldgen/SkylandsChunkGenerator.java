@@ -23,6 +23,7 @@ import com.skylands.skylands.worldgen.biome.SkylandsIslandBiomeDefinition;
 import org.slf4j.Logger;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.BlockPos.MutableBlockPos;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -75,6 +76,24 @@ import net.minecraft.world.level.levelgen.structure.templatesystem.StructureTemp
 
 public class SkylandsChunkGenerator extends ChunkGenerator {
     private static final Logger LOGGER = LogUtils.getLogger();
+
+    private static void clearChunkToAir(ChunkAccess chunk) {
+        int minY = chunk.getMinBuildHeight();
+        int height = chunk.getHeight();
+        MutableBlockPos cursor = new MutableBlockPos();
+        int minX = chunk.getPos().getMinBlockX();
+        int minZ = chunk.getPos().getMinBlockZ();
+        for (int lx = 0; lx < 16; lx++) {
+            int wx = minX | lx;
+            for (int lz = 0; lz < 16; lz++) {
+                int wz = minZ | lz;
+                for (int y = minY; y < minY + height; y++) {
+                    cursor.set(wx, y, wz);
+                    chunk.setBlockState(cursor, Blocks.AIR.defaultBlockState(), false);
+                }
+            }
+        }
+    }
     public static final MapCodec<SkylandsChunkGenerator> CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(
             ChunkGenerator.CODEC.fieldOf("delegate").forGetter(g -> g.delegate),
             com.mojang.serialization.Codec.LONG.optionalFieldOf("seed", 0L).forGetter(g -> g.seed)
@@ -156,7 +175,11 @@ public class SkylandsChunkGenerator extends ChunkGenerator {
         long derivedSeed = randomState.getOrCreateRandomFactory(ResourceLocation.parse("skylands:world_seed"))
                 .fromHashOf("skylands:world_seed")
                 .nextLong();
+        if (derivedSeed == 0L) {
+            return;
+        }
         if (this.seed != derivedSeed) {
+            LOGGER.info("[Skylands] World seed sync: {} -> {}", this.seed, derivedSeed);
             this.seed = derivedSeed;
             this.islandBiomeSource.setSeed(derivedSeed);
             ISLAND_SURFACE_CACHE.clear();
@@ -193,8 +216,12 @@ public class SkylandsChunkGenerator extends ChunkGenerator {
     @Override
     public CompletableFuture<ChunkAccess> fillFromNoise(Blender blender, RandomState randomState, StructureManager structureManager, ChunkAccess chunk) {
         syncWorldSeed(randomState);
-        generateSkyIslandTerrain(chunk);
-        return CompletableFuture.completedFuture(chunk);
+        CompletableFuture<ChunkAccess> delegateFuture = delegate.fillFromNoise(blender, randomState, structureManager, chunk);
+        return delegateFuture.thenApply(resultChunk -> {
+            clearChunkToAir(resultChunk);
+            generateSkyIslandTerrain(resultChunk);
+            return resultChunk;
+        });
     }
 
     @Override
@@ -218,7 +245,6 @@ public class SkylandsChunkGenerator extends ChunkGenerator {
         generateOreFeatures(chunk, protectedBoxes);
         List<SurfaceFeatureApplication> surfaceApps = pendingSurfaceFeaturesByChunk.remove(chunk.getPos());
         if (surfaceApps != null) {
-            System.out.println("[SKY-FTR] @DECOR chunk=" + chunk.getPos() + " apps.size=" + surfaceApps.size());
             Set<Long> placedTreeXZ = new HashSet<>(256);
             for (SurfaceFeatureApplication application : surfaceApps) {
                 applySurfaceFeatures(level, chunk, application.segment(), application.x(), application.z(), application.topY(), placedTreeXZ);
@@ -226,7 +252,6 @@ public class SkylandsChunkGenerator extends ChunkGenerator {
         }
         List<UndersideFeatureApplication> undersideApps = pendingUndersideFeaturesByChunk.remove(chunk.getPos());
         if (undersideApps != null && !undersideApps.isEmpty()) {
-            System.out.println("[SKY-UND] @DECOR chunk=" + chunk.getPos() + " underside.size=" + undersideApps.size());
             Map<Long, List<UndersideFeatureApplication>> byIsland = new HashMap<>();
             for (UndersideFeatureApplication app : undersideApps) {
                 long key = (long) app.segment().islandNoiseSeed();
@@ -606,10 +631,13 @@ public class SkylandsChunkGenerator extends ChunkGenerator {
                 islandSalt,
                 terrainTypeLabel(terrainType)
         );
-        return compositeIsland2DMaps.computeIfAbsent(
-                key,
-                unused -> buildCompositeIsland2DMap(island, terrainType, localCenterX, localCenterZ, localRadius, localBaseY, islandSalt)
-        );
+        CompositeIsland2DMap existing = compositeIsland2DMaps.get(key);
+        if (existing != null) {
+            return existing;
+        }
+        CompositeIsland2DMap computed = buildCompositeIsland2DMap(island, terrainType, localCenterX, localCenterZ, localRadius, localBaseY, islandSalt);
+        CompositeIsland2DMap prev = compositeIsland2DMaps.putIfAbsent(key, computed);
+        return prev != null ? prev : computed;
     }
 
     private CompositeIsland2DMap buildCompositeIsland2DMap(
@@ -4021,12 +4049,10 @@ public class SkylandsChunkGenerator extends ChunkGenerator {
                 continue;
             }
             if (!surfaceBlock.isFaceSturdy(chunk, surfacePos, net.minecraft.core.Direction.UP)) {
-                if (printedHits < traceLimit) System.out.println("[SKY-FTR] @STURDY-fail fidx=" + fi + " " + (feature.isPlacedFeature() ? "@"+feature.placedFeatureId() : feature.featureBlock()) + " surface=" + surfaceBlock.getBlock() + " at " + surfacePos);
                 continue;
             }
             BlockPos placeCheckBase = surfacePos.above();
             if (!canPlaceFeatureV2(chunk, placeCheckBase, radiusR, heightR, toleranceR)) {
-                if (printedHits < traceLimit) System.out.println("[SKY-FTR] @PLACE-fail fidx=" + fi + " " + (feature.isPlacedFeature() ? "@"+feature.placedFeatureId() : feature.featureBlock()) + " R="+radiusR+" H="+heightR+" tol="+toleranceR + " at " + surfacePos);
                 continue;
             }
             printedHits++;
@@ -4074,8 +4100,6 @@ public class SkylandsChunkGenerator extends ChunkGenerator {
             clearSoftAt(level, chunk, abovePos.above());
             if (level.getBlockState(abovePos).isAir() && level.getBlockState(abovePos.above()).isAir()) {
                 net.minecraft.world.level.block.DoublePlantBlock.placeAt(level, lowerState, abovePos, 3);
-            } else {
-                System.out.println("[SKY-FTR] @BLOCK DoublePlant still-blocked @"+abovePos+" low="+level.getBlockState(abovePos).getBlock()+" up="+level.getBlockState(abovePos.above()).getBlock());
             }
         } else if (block instanceof net.minecraft.world.level.block.SugarCaneBlock || block instanceof net.minecraft.world.level.block.CactusBlock) {
             int desiredHeight = feature.clampedHeightRequired();
@@ -4108,17 +4132,13 @@ public class SkylandsChunkGenerator extends ChunkGenerator {
             var key = ResourceKey.create(Registries.PLACED_FEATURE, featureId);
             var holder = registry.get(key);
             if (holder.isEmpty()) {
-                System.out.println("[SKY-FTR] @FAIL holder-empty id=" + featureId + " at " + pos);
+                LOGGER.warn("[SKY-FTR] @FAIL holder-empty id=" + featureId + " at " + pos);
                 return false;
             }
             var random = RandomSource.create(seed ^ (long) pos.getX() * 0x9E3779B9L ^ (long) pos.getZ() * 0x517CC1B7L);
-            boolean placed = holder.get().value().placeWithBiomeCheck(level, this, random, pos.above());
-            if (printedPlaceResCount.getAndIncrement() < 50 || placed) {
-                System.out.println("[SKY-FTR] @PLACE " + featureId + " at " + pos + " placed=" + placed);
-            }
-            return placed;
+            return holder.get().value().placeWithBiomeCheck(level, this, random, pos.above());
         } catch (Exception e) {
-            System.out.println("[SKY-FTR] @FAIL exception id=" + featureId + " msg=" + e.getMessage());
+            LOGGER.warn("[SKY-FTR] @FAIL exception id=" + featureId + " msg=" + e.getMessage());
             e.printStackTrace();
             return false;
         }
@@ -4205,7 +4225,6 @@ public class SkylandsChunkGenerator extends ChunkGenerator {
         String tag = BuiltInRegistries.BLOCK.getKey(udef.block().getBlock()).toString();
         String tipTag = udef.tipBlock() == null ? "null" : BuiltInRegistries.BLOCK.getKey(udef.tipBlock().getBlock()).toString();
         String rootTag = udef.rootReplace() == null ? "null" : BuiltInRegistries.BLOCK.getKey(udef.rootReplace().getBlock()).toString();
-        System.out.println("[SKY-UND] @PLACE u" + ui + " block=" + tag + " extend=" + extend + " tip=" + tipTag + " rootReplace=" + rootTag + " at " + ceilingPos);
         placeUnderhangColumn(level, chunk, udef, ceilingPos, extend);
         if (udef.rootReplace() != null) {
             chunk.setBlockState(ceilingPos, udef.rootReplace(), false);
@@ -5296,7 +5315,7 @@ public class SkylandsChunkGenerator extends ChunkGenerator {
         }
 
         int baseSurfaceY = centerSample.surfaceY();
-        int jitter = island.isSpawnOrigin() ? 0 : deterministicJitter(island.noiseSeed(), SkylandsConfig.HEIGHT_JITTER.getAsInt());
+        int jitter = deterministicJitter(island.noiseSeed(), SkylandsConfig.HEIGHT_JITTER.getAsInt());
         int targetY = Mth.clamp(baseSurfaceY + jitter, SkylandsConfig.MIN_TARGET_Y.getAsInt(), SkylandsConfig.MAX_TARGET_Y.getAsInt());
         int clamped = Mth.clamp(
                 targetY,
@@ -5958,10 +5977,8 @@ public class SkylandsChunkGenerator extends ChunkGenerator {
     }
 
     private int islandCenterY(SkylandsIslands.Island island) {
-        int base = island.isSpawnOrigin()
-                ? SkylandsConfig.SPAWN_CENTER_Y.getAsInt()
-                : SkylandsConfig.CENTER_Y.getAsInt();
-        int jitter = island.isSpawnOrigin() ? 0 : SkylandsConfig.HEIGHT_JITTER.getAsInt();
+        int base = SkylandsConfig.CENTER_Y.getAsInt();
+        int jitter = SkylandsConfig.HEIGHT_JITTER.getAsInt();
         if (jitter <= 0) {
             return base;
         }

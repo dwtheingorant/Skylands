@@ -8,6 +8,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 
+import com.mojang.logging.LogUtils;
 import com.skylands.skylands.SkylandsConfig;
 import com.skylands.skylands.worldgen.SkylandsIslands;
 
@@ -24,7 +25,10 @@ import net.minecraft.world.level.block.SugarCaneBlock;
 import net.minecraft.world.level.block.TallFlowerBlock;
 import net.minecraft.world.level.block.state.BlockState;
 
+import org.slf4j.Logger;
+
 public final class SkylandsIslandBiomes {
+    private static final Logger LOGGER = LogUtils.getLogger();
     private static volatile Cache cache;
 
     public static final ResourceLocation DEFAULT_ORE_SENTINEL = ResourceLocation.fromNamespaceAndPath("skylands", "default_ore_sentinel");
@@ -37,51 +41,19 @@ public final class SkylandsIslandBiomes {
         if (current != null && Objects.equals(current.raw(), raw)) {
             return current.definitions();
         }
-        List<SkylandsIslandBiomeDefinition> parsed = parseDefinitions(raw);
-        Cache next = new Cache(List.copyOf(raw), parsed);
-        cache = next;
-        return next.definitions();
+        synchronized (SkylandsIslandBiomes.class) {
+            Cache current2 = cache;
+            if (current2 != null && Objects.equals(current2.raw(), raw)) {
+                return current2.definitions();
+            }
+            List<SkylandsIslandBiomeDefinition> parsed = parseDefinitions(raw);
+            Cache next = new Cache(List.copyOf(raw), parsed);
+            cache = next;
+            return next.definitions();
+        }
     }
 
     public static SkylandsIslandBiomeDefinition select(long worldSeed, SkylandsIslands.Island island) {
-        if (island.isSpawnOrigin()) {
-            List<? extends String> poolRaw = SkylandsConfig.SPAWN_BIOME_POOL.get();
-            if (poolRaw != null && !poolRaw.isEmpty()) {
-                List<String> pool = poolRaw.stream()
-                        .filter(s -> s != null && !s.isBlank())
-                        .map(String::trim)
-                        .toList();
-                if (!pool.isEmpty()) {
-                    List<SkylandsIslandBiomeDefinition> defs = definitions();
-                    List<SkylandsIslandBiomeDefinition> matched = new ArrayList<>();
-                    for (String id : pool) {
-                        String normalized = id.startsWith("minecraft:") ? id : "minecraft:" + id;
-                        for (SkylandsIslandBiomeDefinition def : defs) {
-                            String defId = def.biomeId().toString();
-                            int colon = defId.indexOf(':');
-                            String defPath = colon >= 0 ? defId.substring(colon + 1) : defId;
-                            if (normalized.equals(defId) || id.equals(defId) || id.equals(defPath)) {
-                                matched.add(def);
-                                break;
-                            }
-                        }
-                    }
-                    if (matched.isEmpty()) {
-                        String firstId = pool.get(0);
-                        String normalized = firstId.startsWith("minecraft:") ? firstId : "minecraft:" + firstId;
-                        ResourceLocation key = ResourceLocation.tryParse(normalized);
-                        if (key != null) {
-                            return SkylandsIslandBiomeDefinition.spawnFallback(key, Blocks.GRASS_BLOCK.defaultBlockState());
-                        }
-                    } else {
-                        long mix = worldSeed ^ Long.rotateLeft((long) island.noiseSeed() * 0x9E3779B97F4A7C15L, 17) ^ 0x5EED151ADE1L;
-                        int idx = Math.floorMod(Long.hashCode(mix), matched.size());
-                        return matched.get(idx);
-                    }
-                }
-            }
-        }
-
         List<SkylandsIslandBiomeDefinition> defs = definitions();
         if (defs.isEmpty()) {
             return defaultDefinition();
@@ -145,19 +117,19 @@ public final class SkylandsIslandBiomes {
                     explicitCount++;
                 }
             }
-            System.out.println("[SKY-BIOME] parsed biomeId=" + biomeId + " features.size=" + features.size() + " underhangs.size=" + underhangs.size() + " ores.defaultTokens=" + defaultCount + " ores.explicitCount=" + explicitCount + " ores.selections.size=" + oreSelections.size());
+            LOGGER.debug("[SKY-BIOME] parsed biomeId=" + biomeId + " features.size=" + features.size() + " underhangs.size=" + underhangs.size() + " ores.defaultTokens=" + defaultCount + " ores.explicitCount=" + explicitCount + " ores.selections.size=" + oreSelections.size());
             for (int i = 0; i < features.size(); i++) {
                 SkylandsIslandBiomeDefinition.SurfaceFeatureDefinition f = features.get(i);
-                System.out.println("[SKY-BIOME]   f" + i + " isPlaced=" + f.isPlacedFeature() + " placedId=" + f.placedFeatureId() + " block=" + f.featureBlock() + " d=" + f.clampedDensity() + " p=" + f.clampedProbability() + " H=" + f.clampedHeightRequired() + " tol=" + f.clampedToleranceRequired() + " R=" + f.clampedRadiusRequired() + " bottoms=" + (f.requiredBottoms() == null ? 0 : f.requiredBottoms().size()));
+                LOGGER.debug("[SKY-BIOME]   f" + i + " isPlaced=" + f.isPlacedFeature() + " placedId=" + f.placedFeatureId() + " block=" + f.featureBlock() + " d=" + f.clampedDensity() + " p=" + f.clampedProbability() + " H=" + f.clampedHeightRequired() + " tol=" + f.clampedToleranceRequired() + " R=" + f.clampedRadiusRequired() + " bottoms=" + (f.requiredBottoms() == null ? 0 : f.requiredBottoms().size()));
             }
             for (int i = 0; i < underhangs.size(); i++) {
                 SkylandsIslandBiomeDefinition.UnderhangDefinition u = underhangs.get(i);
-                System.out.println("[SKY-BIOME]   u" + i + " block=" + u.block() + " tip=" + u.tipBlock() + " min=" + u.clampedMinExtend() + " max=" + u.clampedMaxExtend() + " triesPerChunk=" + u.clampedTriesPerChunk() + " ceilings.size=" + (u.requiredCeilings() == null ? 0 : u.requiredCeilings().size()) + " rootReplace=" + u.rootReplace());
+                LOGGER.debug("[SKY-BIOME]   u" + i + " block=" + u.block() + " tip=" + u.tipBlock() + " min=" + u.clampedMinExtend() + " max=" + u.clampedMaxExtend() + " triesPerChunk=" + u.clampedTriesPerChunk() + " ceilings.size=" + (u.requiredCeilings() == null ? 0 : u.requiredCeilings().size()) + " rootReplace=" + u.rootReplace());
             }
             out.add(new SkylandsIslandBiomeDefinition(
                     biomeId,
                     parseOptionalBlockState(values.get("surface")),
-                    parseOptionalBlockState(values.get("surfacedetail")),
+                    null,
                     parseSurfaceDetail(values.get("surfacedetail")),
                     parseSurfaceLayers(values.get("surfacelayers")),
                     subsurface,
@@ -207,18 +179,18 @@ public final class SkylandsIslandBiomes {
         try {
             ResourceLocation key = ResourceLocation.tryParse(normalized);
             if (key == null) {
-                System.out.println("[SKY-BIOME] WARN invalid block id format: '" + id + "' normalized='" + normalized + "' -> fallback null");
+                LOGGER.warn("[SKY-BIOME] WARN invalid block id format: '" + id + "' normalized='" + normalized + "' -> fallback null");
                 return null;
             }
             if (!BuiltInRegistries.BLOCK.containsKey(key)) {
                 String fallbackName = key.getNamespace().equals("minecraft") ? key.toString() : key.toString();
-                System.out.println("[SKY-BIOME] WARN unknown/unloaded block id: " + fallbackName + " (namespace=" + key.getNamespace() + ") — 请确认该模组方块已注册");
+                LOGGER.warn("[SKY-BIOME] WARN unknown/unloaded block id: " + fallbackName + " (namespace=" + key.getNamespace() + ") — 请确认该模组方块已注册");
                 return null;
             }
             Block block = BuiltInRegistries.BLOCK.get(key);
             return block == Blocks.AIR ? null : block.defaultBlockState();
         } catch (Exception e) {
-            System.out.println("[SKY-BIOME] WARN parse block failed id='" + id + "' err=" + e.getMessage());
+            LOGGER.warn("[SKY-BIOME] WARN parse block failed id='" + id + "' err=" + e.getMessage());
             return null;
         }
     }
@@ -542,7 +514,7 @@ public final class SkylandsIslandBiomes {
             String sourcePart = sourceSeparator >= 0 ? value.substring(sourceSeparator + 1).trim() : "";
             ResourceLocation oreId = parseResourceLocation(orePart);
             if (oreId == null) {
-                System.out.println("[SKY-BIOME] WARN invalid ore id format: " + orePart + " — 需形如 minecraft:coal_ore 或 create:zinc_ore 或 default");
+                LOGGER.warn("[SKY-BIOME] WARN invalid ore id format: " + orePart + " — 需形如 minecraft:coal_ore 或 create:zinc_ore 或 default");
                 continue;
             }
             if (SkylandsIslandBiomes.DEFAULT_ORE_SENTINEL.equals(oreId)) {
@@ -555,9 +527,9 @@ public final class SkylandsIslandBiomes {
             if (!BuiltInRegistries.BLOCK.containsKey(oreId)) {
                 String ns = oreId.getNamespace();
                 if ("minecraft".equals(ns)) {
-                    System.out.println("[SKY-BIOME] WARN unknown vanilla ore block: " + oreId + " — 请检查原版方块 ID 是否拼写正确");
+                    LOGGER.warn("[SKY-BIOME] WARN unknown vanilla ore block: " + oreId + " — 请检查原版方块 ID 是否拼写正确");
                 } else {
-                    System.out.println("[SKY-BIOME] WARN unknown/unloaded ore block: " + oreId + " (namespace=" + ns + ") — 请确认对应模组（如 " + ns + "）已加载且该矿物方块已注册");
+                    LOGGER.warn("[SKY-BIOME] WARN unknown/unloaded ore block: " + oreId + " (namespace=" + ns + ") — 请确认对应模组（如 " + ns + "）已加载且该矿物方块已注册");
                 }
                 continue;
             }

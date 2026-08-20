@@ -7,11 +7,7 @@ import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.levelgen.XoroshiroRandomSource;
 
 public final class SkylandsIslands {
-    public record Island(int centerX, int centerZ, int radius, int noiseSeed, boolean isSpawnOrigin) {
-        public static Island of(int centerX, int centerZ, int radius, int noiseSeed) {
-            return new Island(centerX, centerZ, radius, noiseSeed, false);
-        }
-    }
+    public record Island(int centerX, int centerZ, int radius, int noiseSeed) {}
 
     private SkylandsIslands() {}
 
@@ -45,14 +41,8 @@ public final class SkylandsIslands {
 
     public static Island islandForCell(long seed, int cellX, int cellZ) {
         int spacing = SkylandsConfig.SPACING.getAsInt();
-        boolean isSpawnCell = cellX == 0 && cellZ == 0;
-        int minRadius = isSpawnCell
-                ? Math.max(SkylandsConfig.SPAWN_MIN_RADIUS.getAsInt(), SkylandsConfig.MIN_RADIUS.getAsInt())
-                : SkylandsConfig.MIN_RADIUS.getAsInt();
-        int maxRadius = isSpawnCell
-                ? Math.max(minRadius, SkylandsConfig.SPAWN_MAX_RADIUS.getAsInt())
-                : Math.max(minRadius, SkylandsConfig.MAX_RADIUS.getAsInt());
-        boolean fixedPosition = isSpawnCell && SkylandsConfig.SPAWN_FIXED_POSITION.get();
+        int minRadius = SkylandsConfig.MIN_RADIUS.getAsInt();
+        int maxRadius = Math.max(minRadius, SkylandsConfig.MAX_RADIUS.getAsInt());
         long mixed = seed;
         mixed ^= (long) cellX * 341873128712L;
         mixed ^= (long) cellZ * 132897987541L;
@@ -60,17 +50,17 @@ public final class SkylandsIslands {
         RandomSource random = new XoroshiroRandomSource(mixed);
         int radius = Mth.nextInt(random, minRadius, maxRadius);
 
-        int cellBaseX = isSpawnCell ? 0 : cellX * spacing + spacing / 2;
-        int cellBaseZ = isSpawnCell ? 0 : cellZ * spacing + spacing / 2;
+        int cellBaseX = cellX == 0 ? 0 : cellX * spacing + spacing / 2;
+        int cellBaseZ = cellZ == 0 ? 0 : cellZ * spacing + spacing / 2;
 
-        int offsetLimit = fixedPosition ? 0 : Math.max(0, spacing / 2 - radius - 16);
+        int offsetLimit = cellX == 0 && cellZ == 0 ? 0 : Math.max(0, spacing / 2 - radius - 16);
         Candidate best = null;
-        int candidateCount = fixedPosition ? 1 : (isSpawnCell ? 9 : 7);
+        int candidateCount = cellX == 0 && cellZ == 0 ? 9 : 7;
 
         for (int i = 0; i < candidateCount; i++) {
             int offsetX;
             int offsetZ;
-            if (fixedPosition || i == 0) {
+            if (i == 0) {
                 offsetX = 0;
                 offsetZ = 0;
             } else {
@@ -82,7 +72,7 @@ public final class SkylandsIslands {
             int centerZ = cellBaseZ + offsetZ;
             double score = SkylandsNoise.centerScore(seed, centerX, centerZ);
 
-            if (isSpawnCell && !fixedPosition) {
+            if (cellX == 0 && cellZ == 0) {
                 double distPenalty = Math.sqrt((double) centerX * (double) centerX + (double) centerZ * (double) centerZ)
                         / Math.max(1.0D, spacing * 0.35D);
                 score -= distPenalty * 0.35D;
@@ -97,7 +87,7 @@ public final class SkylandsIslands {
             best = new Candidate(cellBaseX, cellBaseZ, 0.0D);
         }
 
-        return new Island(best.centerX(), best.centerZ(), radius, random.nextInt(), isSpawnCell);
+        return new Island(best.centerX(), best.centerZ(), radius, random.nextInt());
     }
 
     public static int cellForCoordinate(int value, int divisor) {

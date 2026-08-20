@@ -1,72 +1,32 @@
-### Gradle ###
-.gradle/
-build/
-!gradle/wrapper/gradle-wrapper.jar
-!**/src/**/build/
+# build outputs
+**/build/
+**/.gradle/
+**/run/
+**/logs/
+**/out/
 
-### IntelliJ IDEA ###
+# IDE
 .idea/
-*.iws
-*.iml
-*.ipr
-out/
-!**/src/**/out/
-.run/
-
-### Eclipse ###
-.apt_generated
-.classpath
-.eclipse/
-.factorypath
-.project
-.settings
-.springBeans
-.sts4-cache
-bin/
-!**/src/**/bin/
-
-### VS Code ###
 .vscode/
-
-### Mac OS ###
-.DS_Store
-.AppleDouble
-.LSOverride
-._*
-
-### Windows ###
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-
-### Minecraft Modding ###
-run/
-!**/src/**/run/
-**/src/generated/**/.cache/
-repo/
-!**/src/**/repo/
-eclipse/
-logs/
-crash-reports/
-
-### Debug / Trace ###
-.dbg/
-*.hprof
-*.jfr
-*.ndjson
-
-### Editor / Local ###
-*.swp
-*.swo
-*~
-.project
+*.iml
+*.iws
+*.ipr
 .classpath
-.c9/
-*.launch
+.project
 .settings/
-.loadpath
-.recommenders
+.DS_Store
 
-### Local Dev Notes ###
-debug-*.md
-!debug-run-client-launch.md
+# temp scripts & diags
+/tmp/
+/MDK-1.21.1-ModDevGradle-main/launch_client.sh
+/tmp/*.log
+/tmp/*.py
+/tmp/*.sh
+
+# local backup artifacts
+/terrain_backup/
+/skylands_terrain_backup.zip
+
+# intermediate jar builds (keep final named release only via explicit add if needed; default ignore all)
+/skylands-*.jar
+!/skylands-1.0.2.jar
